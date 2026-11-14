@@ -10,18 +10,29 @@ public final class BallDetector {
  }
  private static double difference(int a,int b){return Math.abs(((a>>16)&255)-((b>>16)&255))+Math.abs(((a>>8)&255)-((b>>8)&255))+Math.abs((a&255)-(b&255));}
  private static int pixel(int[] p,int w,int h,double x,double y){return p[Math.max(0,Math.min(h-1,(int)Math.round(y)))*w+Math.max(0,Math.min(w-1,(int)Math.round(x)))];}
+ private static int sample(int[] pixels,int width,int height,int x,int y){
+  return pixels[Math.max(0,Math.min(height-1,y))*width+Math.max(0,Math.min(width-1,x))];
+ }
  public static List<Ball> detect(int[] p,int w,int h,Geometry.Box table,double radius){
   ArrayList<Ball> candidates=new ArrayList<>(),balls=new ArrayList<>();if(table==null)return balls;
-  double[] dx=new double[24],dy=new double[24];for(int k=0;k<24;k++){dx[k]=Math.cos(k*Math.PI/12);dy[k]=Math.sin(k*Math.PI/12);}
+  int[][] offsetX=new int[3][24],offsetY=new int[3][24];
+  double[] scales={.68,.98,1.35};
+  for(int ring=0;ring<scales.length;ring++)for(int k=0;k<24;k++){
+   offsetX[ring][k]=(int)Math.round(Math.cos(k*Math.PI/12)*radius*scales[ring]);
+   offsetY[ring][k]=(int)Math.round(Math.sin(k*Math.PI/12)*radius*scales[ring]);
+  }
   int step=Math.max(2,(int)(radius/4));
   for(int y=(int)(table.t+radius*.7);y<table.b-radius*.7;y+=step)for(int x=(int)(table.l+radius*.7);x<table.r-radius*.7;x+=step){
-   int edges=0,opposites=0;double score=0;boolean[] votes=new boolean[24];
-   for(int k=0;k<24;k++){
-    int inside=pixel(p,w,h,x+dx[k]*radius*.68,y+dy[k]*radius*.68),rim=pixel(p,w,h,x+dx[k]*radius*.98,y+dy[k]*radius*.98),outside=pixel(p,w,h,x+dx[k]*radius*1.35,y+dy[k]*radius*1.35);
+   int edges=0,votes=0;double score=0;
+   // Stop as soon as even all remaining samples cannot meet the same edge threshold.
+   for(int k=0;k<24&&edges+24-k>=17;k++){
+    int inside=sample(p,w,h,x+offsetX[0][k],y+offsetY[0][k]);
+    int rim=sample(p,w,h,x+offsetX[1][k],y+offsetY[1][k]);
+    int outside=sample(p,w,h,x+offsetX[2][k],y+offsetY[2][k]);
     double contrast=difference(inside,outside),edge=difference(rim,outside);
-    if(contrast>55&&edge>30){votes[k]=true;edges++;score+=Math.min(250,contrast);}
+    if(contrast>55&&edge>30){votes|=1<<k;edges++;score+=Math.min(250,contrast);}
    }
-   for(int k=0;k<12;k++)if(votes[k]&&votes[k+12])opposites++;
+   int opposites=Integer.bitCount(votes&(votes>>>12));
    if(edges>=17&&opposites>=7)candidates.add(new Ball(x,y,radius,edges+score/600,color(p,w,h,x,y,radius)));
   }
   candidates.sort((a,b)->Double.compare(b.confidence,a.confidence));

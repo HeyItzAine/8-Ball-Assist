@@ -10,9 +10,13 @@ Install `8 Ball Assist.apk` from the release package. Local builds are saved to 
 2. Tap **Start overlay** and share the **entire screen**.
 3. Open your pool game in landscape.
 
+Floating controls are hidden by default. Enable **Show floating controls** on the main screen or in advanced settings. With controls hidden, the paths still appear. Open the app to stop tracking, or use **Stop** in its notification. Allow notifications to keep that shortcut available.
+
 ## Controls and presets
 
 - **Move toolbar:** drag its status text.
+- **More / Less** expands or collapses the tools. The toolbar has a translucent background.
+- **Hide** hides the controls while tracking continues. Restore them in the app or with **Controls** in the notification.
 - **Pause:** hide predictions and pause tracking.
 - **Rails:** change the number of predicted bounces.
 - **R− / R+:** adjust ball radius.
@@ -45,5 +49,7 @@ Screen analysis runs in memory on your device. The app has no network permission
 - **Colored dashes:** object-ball path, matching its detected color.
 - **Thin, short dashes:** paths after a collision, ending at the next rail or collision.
 - **Estimated:** direction inferred from the contact marker or cue stick when the aiming guide is too short or missing.
+
+Tracking confirms direction across frames and smooths small angle changes. An inferred direction needs three consistent observations and previews at most one rail bounce. Old paths disappear if fresh results stop arriving. Short-guide direction changes and moving cue balls reset confirmation.
 
 Predictions do not account for spin, shot power, friction, or stopping distance. Missed balls and incorrect table boundaries affect the result. Check detected balls with **Pockets** and disable collision previews if those detections are wrong. Other table themes and cue skins need further testing.

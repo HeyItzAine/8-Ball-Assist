@@ -18,7 +18,7 @@ public final class Detector {
   public List<BallDetector.Ball> balls=Collections.emptyList();
   Result(Geometry.Box b,Geometry.Segment l,String s){this(b,l,s,.0075);}
   Result(Geometry.Box b,Geometry.Segment l,String s,double radius){table=b;line=l;status=s;ballRadiusRatio=radius;}
-  public Result withLine(Geometry.Segment l,String status){Result r=new Result(table,l,status,ballRadiusRatio);r.approach=approach;r.cueLine=cueLine;r.contactX=contactX;r.contactY=contactY;r.frameWidth=frameWidth;r.profile=profile;r.balls=balls;r.cueEstimated=cueEstimated;return r;}
+  public Result withLine(Geometry.Segment l,String status){Result r=new Result(table,l,status,ballRadiusRatio);r.approach=approach;r.cueLine=cueLine;r.contactX=contactX;r.contactY=contactY;r.frameWidth=frameWidth;r.profile=profile;r.balls=balls;r.cueEstimated=cueEstimated;r.cueOnly=cueOnly;r.estimated=estimated;return r;}
  }
  private boolean yellow(int c){int r=(c>>16)&255,g=(c>>8)&255,b=c&255;return r>170&&g>135&&b<135&&r>b*1.5&&g>b*1.5&&g>r*.65;}
  private boolean white(int c){int r=(c>>16)&255,g=(c>>8)&255,b=c&255;return r>205&&g>205&&b>205&&Math.max(r,Math.max(g,b))-Math.min(r,Math.min(g,b))<35;}
@@ -48,17 +48,52 @@ public final class Detector {
   if(result.line==null&&whiteMode){
    Geometry.Segment aim=incoming!=null?incoming:stickAim;
    boolean adjacent=false;double rr=w*result.ballRadiusRatio;
-   if(aim!=null&&incoming!=null)for(BallDetector.Ball ball:result.balls)if(Math.hypot(ball.x-aim.u,ball.y-aim.v)<rr*3&&Math.hypot(ball.x-ringX,ball.y-ringY)>rr*1.65)adjacent=true;
+   if(aim!=null&&incoming!=null)for(BallDetector.Ball ball:result.balls)if(Math.hypot(ball.x-aim.u,ball.y-aim.v)<rr*3&&(!Double.isFinite(ringX)||Math.hypot(ball.x-ringX,ball.y-ringY)>rr*1.65))adjacent=true;
    if(aim!=null&&!adjacent){if(incoming!=null){BallDetector.Ball nearest=null;double distance=rr*2;for(BallDetector.Ball ball:result.balls){double d=Math.hypot(ball.x-aim.x,ball.y-aim.y);if(d<distance){distance=d;nearest=ball;}}if(nearest!=null)aim=new Geometry.Segment(nearest.x,nearest.y,nearest.x+aim.u-aim.x,nearest.y+aim.v-aim.y);}result.cueOnly=true;result.cueLine=aim;result.cueEstimated=incoming==null;}
   }
   return result;
  }
- private Geometry.Segment visibleCue(int[] pixels,int w,int h,Geometry.Segment tangent,double r){
-  double angle=Math.atan2(tangent.v-tangent.y,tangent.u-tangent.x),best=0;Geometry.Segment winner=null;
-  for(int offset=-24;offset<=24;offset++){double a=angle+offset*Math.PI/180,dx=Math.cos(a),dy=Math.sin(a);int hit=0,gap=0;double end=0;
-   for(double t=r*.9;t<r*5;t++){boolean white=atWhite(pixels,w,h,tangent.x+dx*t,tangent.y+dy*t);if(white){hit++;gap=0;end=t;}else gap++;if(gap>3)break;}
-   if(hit>r&&hit>best){best=hit;winner=new Geometry.Segment(tangent.x,tangent.y,tangent.x+dx*end,tangent.y+dy*end);}
-  }return winner;
+ private Geometry.Segment visibleCue(int[] pixels,int w,int h,Geometry.Segment tangent,double radius){
+  double angle=Math.atan2(tangent.v-tangent.y,tangent.u-tangent.x);
+  double best=0;
+  Geometry.Segment winner=null;
+  int margin=Math.max(2,(int)Math.ceil(radius*.35));
+  // The contact circle can be a few pixels off-center. Fit the visible branch
+  // beyond the circle and allow its origin to shift across that uncertainty.
+  for(int offset=-24;offset<=24;offset++){
+   double direction=angle+offset*Math.PI/180,dx=Math.cos(direction),dy=Math.sin(direction);
+   for(int shift=-margin;shift<=margin;shift++){
+    double ox=tangent.x-dy*shift,oy=tangent.y+dx*shift,end=0;
+    int hits=0,gaps=0;
+    for(double distance=radius*1.3;distance<radius*7;distance++){
+     double x=ox+dx*distance,y=oy+dy*distance;
+     boolean hit=atWhite(pixels,w,h,x,y)||atWhite(pixels,w,h,x-dy*.6,y+dx*.6)||atWhite(pixels,w,h,x+dy*.6,y-dx*.6);
+     if(hit){hits++;gaps=0;end=distance;}else gaps++;
+     if(hits>0&&gaps>3)break;
+     if(hits==0&&distance>radius*2.3)break;
+    }
+    if(hits>radius&&hits>best){best=hits;winner=new Geometry.Segment(ox,oy,ox+dx*end,oy+dy*end);}
+   }
+  }
+  if(winner==null)return null;
+  double length=winner.length(),dx=(winner.u-winner.x)/length,dy=(winner.v-winner.y)/length;
+  List<double[]> samples=new ArrayList<>();double mx=0,my=0;
+  int left=Math.max(0,(int)Math.min(winner.x,winner.u)-3),right=Math.min(w-1,(int)Math.max(winner.x,winner.u)+3);
+  int top=Math.max(0,(int)Math.min(winner.y,winner.v)-3),bottom=Math.min(h-1,(int)Math.max(winner.y,winner.v)+3);
+  for(int y=top;y<=bottom;y++)for(int x=left;x<=right;x++){
+   double along=(x-winner.x)*dx+(y-winner.y)*dy,across=(x-winner.x)*dy-(y-winner.y)*dx;
+   if(along>radius*1.5&&along<length-1&&Math.abs(across)<2&&white(pixels[y*w+x])){
+    samples.add(new double[]{x,y});mx+=x;my+=y;
+   }
+  }
+  if(samples.size()<8)return winner;
+  mx/=samples.size();my/=samples.size();double xx=0,xy=0,yy=0;
+  for(double[] point:samples){double x=point[0]-mx,y=point[1]-my;xx+=x*x;xy+=x*y;yy+=y*y;}
+  double fitted=.5*Math.atan2(2*xy,xx-yy),ux=Math.cos(fitted),uy=Math.sin(fitted);
+  if(ux*dx+uy*dy<0){ux=-ux;uy=-uy;}
+  double origin=(tangent.x-mx)*ux+(tangent.y-my)*uy;
+  double end=(winner.u-mx)*ux+(winner.v-my)*uy;
+  return new Geometry.Segment(mx+origin*ux,my+origin*uy,mx+end*ux,my+end*uy);
  }
  private Result detectRaw(int[] pixels,int w,int h,Geometry.Box manual){
   Geometry.Box box=manual==null?findTable(pixels,w,h):manual;

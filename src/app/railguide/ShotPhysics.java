@@ -8,8 +8,10 @@ public final class ShotPhysics {
   public final List<double[]> contacts=new ArrayList<>();
  }
  public static Paths predict(Geometry.Segment guide,Geometry.Box box,double radius,int rails,List<BallDetector.Ball> balls,double[][] pockets){
-  Paths out=new Paths();if(guide==null||guide.length()<.01)return out;
-  Set<Integer> excluded=new HashSet<>();for(int i=0;i<balls.size();i++)if(Math.hypot(balls.get(i).x-guide.x,balls.get(i).y-guide.y)<radius*1.7)excluded.add(i);
+  Paths out=new Paths();if(guide==null||box==null||!Double.isFinite(guide.x+guide.y+guide.u+guide.v+radius+box.l+box.t+box.r+box.b)||guide.length()<.01||radius<=0||box.r-box.l<=radius*2||box.b-box.t<=radius*2)return out;
+  Set<Integer> excluded=new HashSet<>();int moving=-1;double closest=radius*.85;
+  for(int i=0;i<balls.size();i++){double d=Math.hypot(balls.get(i).x-guide.x,balls.get(i).y-guide.y);if(d<closest){closest=d;moving=i;}}
+  if(moving>=0)excluded.add(moving);
   int color=0xffeeeeee;double nearest=radius*1.7;for(BallDetector.Ball b:balls){double d=Math.hypot(b.x-guide.x,b.y-guide.y);if(d<nearest){nearest=d;color=b.color;}}
   cast(guide.x,guide.y,(guide.u-guide.x)/guide.length(),(guide.v-guide.y)/guide.length(),box,radius,rails,balls,pockets,excluded,0,color,out);return out;
  }
@@ -36,7 +38,7 @@ public final class ShotPhysics {
     for(int j=0;j<balls.size();j++)if(j!=hit&&!excluded.contains(j)&&Math.hypot(b.x-balls.get(j).x,b.y-balls.get(j).y)<b.r+balls.get(j).r+2)return;
     double ax=b.x-nx,ay=b.y-ny,n=Math.hypot(ax,ay);if(n<.01)return;ax/=n;ay/=n;double normal=dx*ax+dy*ay,ux=dx-normal*ax,uy=dy-normal*ay,tangent=Math.hypot(ux,uy);
     Set<Integer> next=new HashSet<>(excluded);next.add(hit);
-    if(normal>.08)cast(b.x,b.y,ax,ay,box,r,0,balls,pockets,next,depth+1,b.color,out);
+    if(normal>.08)cast(b.x,b.y,ax,ay,box,b.r,0,balls,pockets,next,depth+1,b.color,out);
     if(tangent>.08)cast(nx+ux*.05,ny+uy*.05,ux/tangent,uy/tangent,box,r,0,balls,pockets,next,depth+1,color,out);
     return;
    }
